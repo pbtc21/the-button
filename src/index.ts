@@ -559,8 +559,6 @@ app.post('/api/press', async (c) => {
 // Press with sBTC payment (real Bitcoin mode)
 app.post('/api/press-sbtc', async (c) => {
   const payment = c.req.header('X-PAYMENT');
-  const body = await c.req.json();
-  const player = body.player?.slice(0, 42) || 'Anonymous';
 
   // If no payment header, return 402 with payment requirements
   if (!payment) {
@@ -579,6 +577,15 @@ app.post('/api/press-sbtc', async (c) => {
       nonce
     }, 402);
   }
+
+  // Parse body after 402 check (only if payment provided)
+  let body: any = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const player = body.player?.slice(0, 42) || 'Anonymous';
 
   // Verify and broadcast the payment
   try {
