@@ -560,21 +560,28 @@ app.post('/api/press', async (c) => {
 app.post('/api/press-sbtc', async (c) => {
   const payment = c.req.header('X-PAYMENT');
 
-  // If no payment header, return 402 with payment requirements
+  // If no payment header, return 402 with x402-compatible payment requirements
   if (!payment) {
     const nonce = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min expiry
+
     return c.json({
-      error: 'Payment required',
-      payment: {
-        currency: 'sBTC',
-        amount: PRESS_COST_SATS,
-        amountBTC: PRESS_COST_SATS / 100000000,
-        recipient: c.env.TREASURY_ADDRESS || 'SP2J6CYV7YEBQANTA668TVB2PE30EE09J2XN5SFVS',
-        memo: nonce,
-        contract: SBTC_CONTRACT,
-        instructions: 'Send sBTC transfer with memo, include signed tx in X-PAYMENT header'
+      // x402 standard fields
+      maxAmountRequired: String(PRESS_COST_SATS),
+      resource: '/api/press-sbtc',
+      payTo: c.env.TREASURY_ADDRESS || 'SP2J6CYV7YEBQANTA668TVB2PE30EE09J2XN5SFVS',
+      network: 'mainnet',
+      nonce,
+      expiresAt,
+      tokenType: 'sBTC',
+      tokenContract: SBTC_CONTRACT,
+      pricing: {
+        type: 'fixed',
+        tier: 'standard'
       },
-      nonce
+      // Additional context
+      description: 'Press The Button - reset timer, winner takes pot',
+      instructions: 'Send sBTC transfer, include signed tx hex in X-PAYMENT header'
     }, 402);
   }
 
