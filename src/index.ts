@@ -1,9 +1,17 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 
-const app = new Hono()
+type Bindings = {
+  TREASURY_ADDRESS: string
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('*', cors())
+
+// sBTC token contract on mainnet
+const SBTC_CONTRACT = 'SP3K8BC0PPEVCV7NZ6QSRWPQ2JE9E5B6N3PA0KBR9.token-sbtc'
+const PRESS_COST_SATS = 1000 // 1000 sats = 0.00001 BTC per press
 
 // In-memory game state (would use D1/KV in production)
 let gameState = {
@@ -488,70 +496,115 @@ app.get('/api/state', (c) => {
   });
 });
 
-// Press the button
-app.post('/api/press', async (c) => {
-  const body = await c.req.json();
-  const player = body.player?.slice(0, 20) || 'Anonymous';
-
+// Helper function to process a press
+function processPress(player: string): { success: boolean, error?: string, timer?: number, color?: string, flair?: string, pot?: number } {
   if (gameState.gameOver) {
-    return c.json({ success: false, error: 'Game over' });
+    return { success: false, error: 'Game over' };
   }
 
-  // First press starts the game
   let currentTimer = 60;
   if (!gameState.started) {
     gameState.started = true;
     gameState.lastPressTime = Date.now();
   } else {
-    // Calculate current timer
     const elapsed = (Date.now() - gameState.lastPressTime) / 1000;
     currentTimer = Math.max(0, gameState.timer - elapsed);
 
     if (currentTimer <= 0) {
       gameState.gameOver = true;
       gameState.winner = gameState.lastPresser;
-      return c.json({ success: false, error: 'Too late!' });
+      return { success: false, error: 'Too late!' };
     }
   }
 
-  // Record the press
   const color = getPresserColor(currentTimer);
   const flair = getFlairName(currentTimer);
 
-  gameState.timer = 60; // Reset to 60 seconds
+  gameState.timer = 60;
   gameState.lastPressTime = Date.now();
   gameState.lastPresser = player;
-  gameState.pot += 0.001; // 1000 microSTX per press
   gameState.pressCount++;
 
-  // Update player stats
   const playerStats = gameState.players.get(player) || { presses: 0, lastPress: 0, color: '' };
   playerStats.presses++;
   playerStats.lastPress = Date.now();
   playerStats.color = color;
   gameState.players.set(player, playerStats);
 
-  // Add to history
   gameState.history.unshift({
     player,
     time: Date.now(),
     timerAt: currentTimer,
     color,
     flair
-  });
+  } as any);
 
-  // Keep history manageable
   if (gameState.history.length > 100) {
     gameState.history = gameState.history.slice(0, 100);
   }
 
-  return c.json({
-    success: true,
-    timer: 60,
-    color,
-    flair,
-    pot: gameState.pot
-  });
+  return { success: true, timer: 60, color, flair, pot: gameState.pot };
+}
+
+// Press the button (free play mode)
+app.post('/api/press', async (c) => {
+  const body = await c.req.json();
+  const player = body.player?.slice(0, 20) || 'Anonymous';
+
+  gameState.pot += 0.001; // Simulated cost
+  const result = processPress(player);
+  return c.json({ ...result, mode: 'free' });
+});
+
+// Press with sBTC payment (real Bitcoin mode)
+app.post('/api/press-sbtc', async (c) => {
+  const payment = c.req.header('X-PAYMENT');
+  const body = await c.req.json();
+  const player = body.player?.slice(0, 42) || 'Anonymous';
+
+  // If no payment header, return 402 with payment requirements
+  if (!payment) {
+    const nonce = crypto.randomUUID();
+    return c.json({
+      error: 'Payment required',
+      payment: {
+        currency: 'sBTC',
+        amount: PRESS_COST_SATS,
+        amountBTC: PRESS_COST_SATS / 100000000,
+        recipient: c.env.TREASURY_ADDRESS || 'SP2J6CYV7YEBQANTA668TVB2PE30EE09J2XN5SFVS',
+        memo: nonce,
+        contract: SBTC_CONTRACT,
+        instructions: 'Send sBTC transfer with memo, include signed tx in X-PAYMENT header'
+      },
+      nonce
+    }, 402);
+  }
+
+  // Verify and broadcast the payment
+  try {
+    const txRes = await fetch('https://api.hiro.so/v2/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/hex' },
+      body: payment
+    });
+
+    if (!txRes.ok) {
+      const err = await txRes.text();
+      return c.json({ success: false, error: 'Payment failed: ' + err }, 400);
+    }
+
+    const txData = await txRes.json() as any;
+    const txId = txData.txid;
+
+    // Payment accepted - add to pot and process press
+    gameState.pot += PRESS_COST_SATS / 100000000;
+    const result = processPress(player);
+
+    return c.json({ ...result, txId, mode: 'sbtc' });
+
+  } catch (err) {
+    return c.json({ success: false, error: 'Payment verification failed' }, 400);
+  }
 });
 
 // Reset for new round
