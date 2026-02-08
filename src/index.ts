@@ -556,6 +556,38 @@ app.post('/api/press', async (c) => {
   return c.json({ ...result, mode: 'free' });
 });
 
+// x402 discovery endpoint (GET returns payment schema)
+app.get('/api/press-sbtc', (c) => {
+  return c.json({
+    x402Version: 1,
+    name: 'The Button',
+    image: 'https://the-button.p-d07.workers.dev/button.png',
+    accepts: [{
+      scheme: 'exact',
+      network: 'stacks',
+      maxAmountRequired: String(PRESS_COST_SATS),
+      resource: '/api/press-sbtc',
+      description: 'Press The Button - reset timer, winner takes pot (1000 sats)',
+      mimeType: 'application/json',
+      payTo: c.env.TREASURY_ADDRESS || 'SPKH9AWG0ENZ87J1X0PBD4HETP22G8W22AFNVF8K',
+      maxTimeoutSeconds: 300,
+      asset: 'sBTC',
+      outputSchema: {
+        input: { type: 'http', method: 'POST', bodyType: 'json' },
+        output: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            timer: { type: 'number' },
+            color: { type: 'string' },
+            flair: { type: 'string' }
+          }
+        }
+      }
+    }]
+  });
+});
+
 // Press with sBTC payment (real Bitcoin mode)
 app.post('/api/press-sbtc', async (c) => {
   const payment = c.req.header('X-PAYMENT');
@@ -673,5 +705,20 @@ app.get('/api/agent', (c) => {
 });
 
 app.get('/health', (c) => c.json({ status: 'button ready', round: gameState.round }));
+
+// x402 well-known discovery
+app.get('/.well-known/x402.json', (c) => {
+  return c.json({
+    x402Version: 1,
+    name: 'The Button',
+    description: 'Press to reset the timer. When it hits 0, last presser wins the pot.',
+    endpoints: [{
+      path: '/api/press-sbtc',
+      method: 'POST',
+      asset: 'sBTC',
+      amount: PRESS_COST_SATS
+    }]
+  });
+});
 
 export default app;
