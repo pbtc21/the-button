@@ -569,7 +569,7 @@ app.post('/api/press-sbtc', async (c) => {
       // x402 standard fields
       maxAmountRequired: String(PRESS_COST_SATS),
       resource: '/api/press-sbtc',
-      payTo: c.env.TREASURY_ADDRESS || 'SP2J6CYV7YEBQANTA668TVB2PE30EE09J2XN5SFVS',
+      payTo: c.env.TREASURY_ADDRESS || 'SPKH9AWG0ENZ87J1X0PBD4HETP22G8W22AFNVF8K',
       network: 'mainnet',
       nonce,
       expiresAt,
