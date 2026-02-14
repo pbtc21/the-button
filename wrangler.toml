@@ -6,3 +6,12 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 TREASURY_ADDRESS = "SPKH9AWG0ENZ87J1X0PBD4HETP22G8W22AFNVF8K"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "the-button-db"
+database_id = "your-database-id-here"
+
+# To create the database:
+# wrangler d1 create the-button-db
+# wrangler d1 execute the-button-db --file=./schema.sql
